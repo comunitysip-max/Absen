@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SIP QR SCANNER</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&display=swap');
+    body { 
+      font-family: 'Plus Jakarta Sans', sans-serif; 
+      background-color: #09090b; 
+    }
+    /* Laser line animation */
+    @keyframes laser-move {
+      0% { top: 10%; opacity: 0.3; }
+      50% { top: 90%; opacity: 1; }
+      100% { top: 10%; opacity: 0.3; }
+    }
+    .animate-laser { 
+      animation: laser-move 2.2s infinite ease-in-out; 
+    }
+    /* Brackets corners styling */
+    .bracket-corner {
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      border-color: #18181b;
+      border-style: solid;
+      z-index: 25;
+    }
+    .bracket-top-left { top: 20px; left: 20px; border-width: 5px 0 0 5px; border-top-left-radius: 8px; }
+    .bracket-top-right { top: 20px; right: 20px; border-width: 5px 5px 0 0; border-top-right-radius: 8px; }
+    .bracket-bottom-left { bottom: 20px; left: 20px; border-width: 0 0 5px 5px; border-bottom-left-radius: 8px; }
+    .border-bottom-right { bottom: 20px; right: 200px; } /* Safety coordinate fallback */
+    .bracket-bottom-right { bottom: 20px; right: 20px; border-right-width: 5px; border-bottom-width: 5px; border-bottom-right-radius: 8px; border-color: #18181b; position: absolute; width: 28px; height: 28px; z-index: 25; }
+  </style>
+</head>
+<body class="min-h-screen text-slate-100 flex flex-col items-center justify-between p-6 select-none overflow-hidden">
+
+  <!-- Container Utama Layout (Sesuai Screenshot_2026-06-18-20-33-04-517_com.mi.globalbrowser.jpg) -->
+  <div class="w-full max-w-md flex flex-col items-center justify-between flex-grow space-y-6">
+    
+    <!-- Bagian Atas: Logo & Header -->
+    <div class="flex flex-col items-center pt-6 space-y-3 shrink-0">
+      <div class="w-16 h-16 rounded-[22px] bg-[#18181b] border border-neutral-800 flex items-center justify-center p-1.5 shadow-xl">
+        <img src="https://lh3.googleusercontent.com/d/1W5cUxwpYCcC4ywpJEfeB5i1QfxFfBImD" alt="SIP Community Logo" class="w-full h-full object-contain rounded-xl" referrerpolicy="no-referrer">
+      </div>
+      <div class="text-center">
+        <h1 class="text-lg font-black tracking-widest text-white uppercase">SIP <span class="text-red-500">QR SCANNER</span></h1>
+        <p class="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest mt-1.5">
+          PINDAI QR PRESENSI: <span id="agenda-sub-name" class="text-slate-300 font-mono">-</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Bagian Tengah: Kamera Viewfinder Box -->
+    <div class="w-full relative aspect-square max-w-[340px] bg-[#18181b]/40 border-4 border-[#18181b] rounded-[40px] overflow-hidden shadow-2xl flex items-center justify-center shrink-0">
+      <!-- Element Reader html5-qrcode -->
+      <div id="reader-massal" class="w-full h-full z-10 scale-105"></div>
+      
+      <!-- Overlays Focus Brackets -->
+      <div class="bracket-corner bracket-top-left"></div>
+      <div class="bracket-corner bracket-top-right"></div>
+      <div class="bracket-corner bracket-bottom-left"></div>
+      <div class="bracket-bottom-right bracket-bottom-right"></div>
+      
+      <!-- Neon Laser Line (Merah Sesuai Screenshot) -->
+      <div id="scanner-laser" class="absolute left-6 right-6 h-0.5 bg-red-500/80 shadow-[0_0_12px_#ef4444] z-20 top-1/2 animate-laser"></div>
+      
+      <!-- Fallback Placeholder -->
+      <div class="absolute text-center space-y-2 text-neutral-800 z-0 select-none">
+        <i class="fa-solid fa-qrcode text-5xl"></i>
+        <p class="text-[9px] font-black uppercase tracking-widest text-neutral-700">MENGHUBUNGKAN KAMERA...</p>
+      </div>
+    </div>
+
+    <!-- Tombol Floating Akses Kamera / Switch (Sesuai Lingkaran Berwarna di Kanan Bawah Screenshot) -->
+    <div class="w-full max-w-[340px] flex justify-end px-2 shrink-0">
+      <button onclick="switchCamera()" class="w-12 h-12 rounded-full bg-slate-900 border border-neutral-800 flex items-center justify-center text-slate-300 hover:text-white transition shadow-2xl active:scale-90 transform relative overflow-hidden group">
+        <div class="absolute inset-0 bg-gradient-to-tr from-indigo-500/20 via-purple-500/10 to-pink-500/20 animate-pulse"></div>
+        <i class="fa-solid fa-camera-rotate text-sm z-10"></i>
+      </button>
+    </div>
+
+    <!-- Bagian Bawah: Tombol Pembatalan Lebar (Batalkan Scan) -->
+    <div class="w-full max-w-[340px] pt-4 pb-6 shrink-0">
+      <button onclick="window.close()" class="w-full bg-[#18181b] hover:bg-[#27272a] text-slate-300 font-extrabold py-4 rounded-2xl text-xs uppercase tracking-widest transition duration-150 border border-neutral-800 active:scale-95">
+        Batalkan Scan
+      </button>
+    </div>
+
+  </div>
+
+  <!-- NOTIFIKASI TOAST FLOATING (Non-blocking Mass Scanner) -->
+  <div id="toast-container" class="fixed top-5 left-4 right-4 z-50 flex flex-col items-center space-y-2 pointer-events-none"></div>
+
+  <!-- Library HTML5-QRCode via jsDelivr CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" referrerpolicy="no-referrer"></script>
+  
+  <script>
+    // 1. Ambil Query Parameters dinamis dari URL pemanggil
+    const urlParams = new URLSearchParams(window.location.search);
+    const agendaId = urlParams.get('agendaId') || '';
+    const agendaName = urlParams.get('agendaName') || 'Agenda Kegiatan';
+    const webAppUrl = urlParams.get('webAppUrl') || '';
+
+    // Render penunjuk agenda aktif di layar
+    document.getElementById('agenda-sub-name').innerText = agendaId || 'EVT-XXXXXX';
+
+    let activeMassScanner = null;
+    let scannerCooldownMap = {};
+    let cameras = [];
+    let activeCameraIndex = 0;
+
+    // Haptic Feedback (Vibrasi Fisik di Handphone)
+    function triggerPhoneVibration(duration) {
+      if (navigator.vibrate) {
+        navigator.vibrate(duration);
+      }
+    }
+
+    // Synth Audio Feedback (Suara Bip tanpa load aset luar)
+    function triggerAudioBeep() {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(1400, audioCtx.currentTime); // Tinggi & Nyaring
+        gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.15);
+      } catch (e) {
+        console.warn("Audio Context diblokir browser.");
+      }
+    }
+
+    // Tampilkan Toast Notifikasi Kecil Mengambang (Non-blocking UI)
+    function showToast(title, message, isSuccess) {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      const toast = document.createElement('div');
+      toast.className = `w-full max-w-sm p-4 rounded-2xl border flex items-center gap-3 shadow-2xl backdrop-blur-md transform transition-all duration-300 translate-y-[-20px] opacity-0 pointer-events-auto ${
+        isSuccess 
+          ? 'bg-emerald-950/90 border-emerald-500/30 text-emerald-400' 
+          : 'bg-rose-950/90 border-rose-500/30 text-rose-400'
+      }`;
+
+      const icon = isSuccess ? 'fa-circle-check' : 'fa-triangle-exclamation';
+      toast.innerHTML = `
+        <i class="fa-solid ${icon} text-base shrink-0"></i>
+        <div class="flex-1 min-w-0">
+          <p class="text-[10px] font-black uppercase tracking-wider text-white">${title}</p>
+          <p class="text-[11px] opacity-80 leading-normal mt-0.5 truncate">${message}</p>
+        </div>
+      `;
+
+      container.appendChild(toast);
+      
+      // Animasi muncul
+      setTimeout(() => {
+        toast.classList.remove('translate-y-[-20px]', 'opacity-0');
+      }, 50);
+
+      // Animasi hilang otomatis
+      setTimeout(() => {
+        toast.classList.add('translate-y-[-20px]', 'opacity-0');
+        setTimeout(() => { toast.remove(); }, 300);
+      }, 3500);
+    }
+
+    // Inisialisasi Kamera sewaktu Halaman Terbuka
+    window.onload = function() {
+      if (!agendaId || !webAppUrl) {
+        showToast("PARAMETER SALAH", "Buka scanner ini murni dari portal SIP utama.", false);
+        return;
+      }
+      
+      // Deteksi Kamera Terlebih dahulu
+      Html5Qrcode.getCameras().then(devices => {
+        if (devices && devices.length > 0) {
+          cameras = devices;
+          // Cari kamera belakang secara otomatis
+          let backCamIdx = devices.findIndex(device => 
+            device.label.toLowerCase().includes('back') || 
+            device.label.toLowerCase().includes('rear') ||
+            device.label.toLowerCase().includes('environment')
+          );
+          activeCameraIndex = backCamIdx !== -1 ? backCamIdx : 0;
+          startScannerWithId(cameras[activeCameraIndex].id);
+        } else {
+          showToast("KAMERA ERROR", "Tidak ada kamera terdeteksi di perangkat Anda.", false);
+        }
+      }).catch(err => {
+        showToast("IZIN DITOLAK", "Berikan izin kamera untuk memulai pemindaian.", false);
+      });
+    };
+
+    function startScannerWithId(cameraId) {
+      if (activeMassScanner) {
+        activeMassScanner.clear();
+      }
+
+      const config = {
+        fps: 22,
+        qrbox: function(width, height) {
+          const size = Math.min(width, height) * 0.85;
+          return { width: size, height: size };
+        },
+        aspectRatio: 1.0
+      };
+
+      activeMassScanner = new Html5Qrcode("reader-massal");
+      activeMassScanner.start(
+        cameraId,
+        config,
+        function(decodedText) {
+          processAttendanceScan(decodedText.trim());
+        },
+        function(err) {}
+      ).catch(err => {
+        showToast("GAGAL START", "Kamera gagal melakukan inisialisasi stream.", false);
+      });
+    }
+
+    // Balik Arah Kamera (Switch Front / Back Camera)
+    function switchCamera() {
+      if (cameras.length <= 1) {
+        showToast("SWITCH KAMERA", "Perangkat Anda hanya memiliki satu kamera.", false);
+        return;
+      }
+      activeCameraIndex = (activeCameraIndex + 1) % cameras.length;
+      if (activeMassScanner) {
+        activeMassScanner.stop().then(() => {
+          startScannerWithId(cameras[activeCameraIndex].id);
+        }).catch(err => {
+          console.error("Gagal menghentikan scanner: " + err);
+        });
+      }
+    }
+
+    // Memproses Data Absen & Mengirim ke Webhook Apps Script
+    function processAttendanceScan(memberId) {
+      memberId = memberId.toUpperCase().trim();
+      const nowTime = new Date().getTime();
+
+      // Anti-Spam Cooldown 5 Detik per Anggota (Mencegah scan berulang)
+      if (scannerCooldownMap[memberId] && (nowTime - scannerCooldownMap[memberId] < 5000)) {
+        return; 
+      }
+      scannerCooldownMap[memberId] = nowTime;
+
+      // Berikan umpan balik fisik (vibrasi pendek & bip suara)
+      triggerPhoneVibration(80);
+      triggerAudioBeep();
+
+      // Kirim data absensi ke doPost() Google Apps Script secara Asinkron (no-cors agar aman)
+      fetch(webAppUrl, {
+        method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "application/plain"
+        },
+        body: JSON.stringify({
+          agendaId: agendaId,
+          memberId: memberId
+        })
+      }).then(() => {
+        // Melakukan bypass no-cors untuk mengonfirmasi data terkirim
+        showToast("ABSENSI TERIKAT", `ID: ${memberId} berhasil disinkronkan ke database!`, true);
+      }).catch(err => {
+        showToast("ERROR KONEKSI", "Data gagal dikirim, cek kuota internet Anda.", false);
+      });
+    }
+  </script>
+</body>
+</html>
